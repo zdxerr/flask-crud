@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+    flaskext.crud
+
+    :copyright: (c) 2012 by Christoph Schniedermeier.
+    :license: BSD, see LICENSE for more details.
+"""
+
 
 from flask import request, Response, jsonify, views, render_template, abort
 import sqlalchemy.exc
@@ -7,6 +15,7 @@ content_types = {
     'text/html': None,
     'text/csv': None
 }
+
 
 
 class View(views.MethodView):
