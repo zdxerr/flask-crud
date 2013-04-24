@@ -19,10 +19,11 @@ content_types = {
 
 
 class View(views.MethodView):
-    def __init__(self, app, db, model):
+    def __init__(self, app, db, model, results_per_page):
         self.app = app
         self.db = db
         self.model = model
+        self.results_per_page = results_per_page
 
     def get(self, id):
         accepted_content = request.accept_mimetypes.best_match(content_types)
@@ -93,10 +94,10 @@ class Rest:
         self.app = app
         self.db = db
 
-    def api(self, methods=None):
+    def api(self, methods=None, results_per_page=10):
         def dec(model):
             view = View.as_view('api_' + model.__tablename__, self.app,
-                                self.db, model)
+                                self.db, model, results_per_page)
             path = '/' + model.__tablename__ + '/'
             self.app.add_url_rule(path, defaults={'id': None},
                                   view_func=view, methods=['GET', ])
