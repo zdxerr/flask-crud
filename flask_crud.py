@@ -7,7 +7,9 @@
 """
 
 
-from flask import request, Response, jsonify, views, render_template, abort
+from flask import request, Response, jsonify, views, render_template, abort, \
+    make_response
+from werkzeug import urls
 import sqlalchemy.exc
 
 content_types = {
@@ -17,29 +19,55 @@ content_types = {
 }
 
 
-
 class View(views.MethodView):
-    def __init__(self, app, db, model, results_per_page):
+    def __init__(self, app, db, model, per_page):
         self.app = app
         self.db = db
         self.model = model
-        self.results_per_page = results_per_page
+        self.per_page = per_page
 
     def get(self, id):
         accepted_content = request.accept_mimetypes.best_match(content_types)
-        q = request.values.get('q')
+        query = self.model.query
+
         if id:
-            return jsonify(self.model.query.get_or_404(id).to_dict())
-        elif q:
-            return jsonify(self.model.query.filter_by(name=q).first().to_dict())
+            return jsonify(query.get_or_404(id).to_dict())
         else:
-            k = self.model.__tablename__ + 's'
-            v = [r.to_dict() for r in self.model.query.all()]
+            q = request.values.get('q')
+            if q:
+                query = query.filter_by(name=q)
+
+            p = query.paginate(
+                request.values.get('page', 0, type=int),
+                request.values.get('per_page', self.per_page, type=int)
+            )
+
+            data = {self.model.__tablename__ + 's':
+                    [r.to_dict() for r in p.items]}
+
             if accepted_content == 'text/html':
-                return render_template('test.html', result={k: v})
+                return render_template('test.html', result=data)
             elif accepted_content == 'text/csv':
-                return jsonify({k: v})
-            return jsonify({k: v})
+                return jsonify(data)
+
+            response = make_response(jsonify(data))
+
+            # adding link header for pagination
+            # <:base_url?page=2&per_page=2>; rel="next",
+            response.headers['access-control-expose-headers'] = 'Link'
+
+            base_url = urls.Href(request.base_url)
+            links = {
+                'first': 1 if not p.page == 1 else None,
+                'prev': p.prev_num if p.has_prev else None,
+                'next': p.next_num if p.has_next else None,
+                'last': p.pages if not p.page == p.pages else None,
+            }
+
+            response.headers['link'] = ', '.join('<{}>; rel="{}"'.format(
+                base_url(page=page, per_page=p.per_page), rel)
+                for rel, page in links.items() if page)
+            return response
 
     def post(self):
         data = request.values.to_dict()
@@ -47,8 +75,8 @@ class View(views.MethodView):
             data = request.json
 
         if False:
-            column_values = {k: v for (k, v) in request.values.iteritems(True)
-                             if k in self.model.__table__.columns.keys()}
+            column_values = dict((k, v) for k, v in request.values.items(True)
+                                 if k in self.model.__table__.columns.keys())
             item = self.model.query.filter_by(**column_values).first()
             if not item:
                 item = self.model(**data)
