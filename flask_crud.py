@@ -7,10 +7,10 @@
 """
 
 
-from flask import request, Response, jsonify, views, render_template, abort, \
-    make_response
-from werkzeug import urls
+from flask import request, Response, jsonify, views, render_template, abort
 import sqlalchemy.exc
+
+from utilities import link_headers
 
 content_types = {
     'application/json': jsonify,
@@ -50,24 +50,7 @@ class View(views.MethodView):
             elif accepted_content == 'text/csv':
                 return jsonify(data)
 
-            response = make_response(jsonify(data))
-
-            # adding link header for pagination
-            # <:base_url?page=2&per_page=2>; rel="next",
-            response.headers['access-control-expose-headers'] = 'Link'
-
-            base_url = urls.Href(request.base_url)
-            links = {
-                'first': 1 if not p.page == 1 else None,
-                'prev': p.prev_num if p.has_prev else None,
-                'next': p.next_num if p.has_next else None,
-                'last': p.pages if not p.page == p.pages else None,
-            }
-
-            response.headers['link'] = ', '.join('<{}>; rel="{}"'.format(
-                base_url(page=page, per_page=p.per_page), rel)
-                for rel, page in links.items() if page)
-            return response
+            return (jsonify(data), 200, link_headers(p))
 
     def post(self):
         data = request.values.to_dict()
