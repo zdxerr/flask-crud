@@ -42,15 +42,19 @@ class View(views.MethodView):
                 request.values.get('per_page', self.per_page, type=int)
             )
 
-            data = {self.model.__tablename__ + 's':
-                    [r.to_dict() for r in p.items]}
-
-            if accepted_content == 'text/html':
-                return render_template('test.html', result=data)
-            elif accepted_content == 'text/csv':
-                return jsonify(data)
-
-            return (jsonify(data), 200, link_headers(p))
+            if accepted_content == 'text/csv':
+                def generate():
+                    if p.items:
+                        yield p.items[0].to_csv_header() + '\n'
+                    for item in p.items:
+                        yield item.to_csv() + '\n'
+                    yield self.model.ikeys()
+                return Response(generate(), mimetype='text/csv')
+            else:
+                data = {self.model.__tablename__ + 's': [r.to_dict() for r in p.items]}
+                if accepted_content == 'text/html':
+                    return render_template('test.html', result=data)
+                return (jsonify(data), 200, link_headers(p))
 
     def post(self):
         data = request.values.to_dict()
