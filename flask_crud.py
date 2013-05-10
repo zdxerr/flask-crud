@@ -34,24 +34,27 @@ class View(views.MethodView):
             return jsonify(query.get_or_404(id).to_dict())
         else:
             q = request.values.get('q')
+            print "HEY", q
             if q:
                 query = query.filter_by(name=q)
 
             p = query.paginate(
-                request.values.get('page', 0, type=int),
-                request.values.get('per_page', self.per_page, type=int)
+                request.values.get('page', 1, type=int),
+                request.values.get('per_page', self.per_page, type=int),
+                error_out=False
             )
 
             if accepted_content == 'text/csv':
+                print "CSV"
                 def generate():
                     if p.items:
                         yield p.items[0].to_csv_header() + '\n'
                     for item in p.items:
                         yield item.to_csv() + '\n'
-                    yield self.model.ikeys()
                 return Response(generate(), mimetype='text/csv')
             else:
-                data = {self.model.__tablename__ + 's': [r.to_dict() for r in p.items]}
+                name = self.model.__tablename__ + 's'
+                data = {name: [r.to_dict() for r in p.items]}
                 if accepted_content == 'text/html':
                     return render_template('test.html', result=data)
                 return (jsonify(data), 200, link_headers(p))
