@@ -6,8 +6,9 @@
     :license: BSD, see LICENSE for more details.
 """
 
+import re
 
-from flask import request, Response, jsonify, views, render_template, abort
+from flask import request, Response, jsonify, views, abort
 import sqlalchemy.exc
 
 from utilities import link_headers
@@ -20,23 +21,25 @@ content_types = {
 
 
 class View(views.MethodView):
-    def __init__(self, app, db, model, per_page):
+    def __init__(self, app, db, model, per_page, query_func):
         self.app = app
         self.db = db
         self.model = model
         self.per_page = per_page
+        self.query_func = query_func
 
     def get(self, id):
-        accepted_content = request.accept_mimetypes.best_match(content_types)
         query = self.model.query
 
         if id:
             return jsonify(query.get_or_404(id).to_dict())
         else:
             q = request.values.get('q')
-            print "HEY", q
             if q:
                 query = query.filter_by(name=q)
+
+            if self.query_func:
+                query = self.query_func(query)
 
             p = query.paginate(
                 request.values.get('page', 1, type=int),
@@ -44,20 +47,9 @@ class View(views.MethodView):
                 error_out=False
             )
 
-            if accepted_content == 'text/csv':
-                print "CSV"
-                def generate():
-                    if p.items:
-                        yield p.items[0].to_csv_header() + '\n'
-                    for item in p.items:
-                        yield item.to_csv() + '\n'
-                return Response(generate(), mimetype='text/csv')
-            else:
-                name = self.model.__tablename__ + 's'
-                data = {name: [r.to_dict() for r in p.items]}
-                if accepted_content == 'text/html':
-                    return render_template('test.html', result=data)
-                return (jsonify(data), 200, link_headers(p))
+            name = self.model.__tablename__ + 's'
+            data = {name: [r.to_dict() for r in p.items]}
+            return (jsonify(data), 200, link_headers(p))
 
     def post(self):
         data = request.values.to_dict()
@@ -112,10 +104,10 @@ class Rest:
         self.app = app
         self.db = db
 
-    def api(self, methods=None, results_per_page=10):
+    def api(self, methods=None, results_per_page=10, query_func=None):
         def dec(model):
             view = View.as_view('api_' + model.__tablename__, self.app,
-                                self.db, model, results_per_page)
+                                self.db, model, results_per_page, query_func)
             path = '/' + model.__tablename__ + '/'
             self.app.add_url_rule(path, defaults={'id': None},
                                   view_func=view, methods=['GET', ])
