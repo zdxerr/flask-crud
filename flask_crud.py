@@ -7,7 +7,6 @@
 """
 
 import re
-import logging
 
 from flask import request, Response, jsonify, views, abort
 import sqlalchemy.exc
@@ -20,7 +19,6 @@ content_types = {
     'text/csv': None
 }
 
-logger = logging.getLogger(__name__)
 
 
 class View(views.MethodView):
@@ -35,7 +33,7 @@ class View(views.MethodView):
         query = self.model.query
 
         if id:
-            return jsonify(query.get_or_404(id).to_dict())
+            return jsonify(query.get_or_404(id))
         else:
             q = request.values.get('q')
             if q:
@@ -51,7 +49,7 @@ class View(views.MethodView):
             )
 
             name = self.model.__tablename__ + 's'
-            data = {name: [r.to_dict() for r in p.items]}
+            data = {name: p.items}
             return (jsonify(data), 200, link_headers(p))
 
     def post(self):
@@ -114,18 +112,16 @@ class Rest:
 
     def __add_rule(self, model, methods, results_per_page, query_func):
         path = '/' + model.__tablename__ + '/'
-        logger.debug("Add rule '%s' for methods: %s", ', '.join(methods))
+        self.app.logger.debug("Add rule '%s' for methods: %s", path, ', '.join(methods))
 
         view = View.as_view('api_' + model.__tablename__, self.app,
-                                self.db, model, results_per_page, query_func)
+                            self.db, model, results_per_page, query_func)
         self.app.add_url_rule(path, defaults={'id': None},
                               view_func=view, methods=['GET', ])
         self.app.add_url_rule(path, view_func=view, methods=['POST', ])
         self.app.add_url_rule(path + '<int:id>', view_func=view,
                               methods=['GET', 'PUT', 'DELETE'])
 
-        # self.app.add_url_rule(path + '<slug>', view_func=view,
-        #                       methods=['GET'])
 
     def add_rules(self):
         for model, rule in self.models.items():
@@ -139,19 +135,5 @@ class Rest:
                 'results_per_page': results_per_page,
                 'query_func': query_func
             }
-            return model
-
-            view = View.as_view('api_' + model.__tablename__, self.app,
-                                self.db, model, results_per_page, query_func)
-            path = '/' + model.__tablename__ + '/'
-            self.app.add_url_rule(path, defaults={'id': None},
-                                  view_func=view, methods=['GET', ])
-            self.app.add_url_rule(path, view_func=view, methods=['POST', ])
-            self.app.add_url_rule(path + '<int:id>', view_func=view,
-                                  methods=['GET', 'PUT', 'DELETE'])
-
-            self.app.add_url_rule(path + '<slug>', view_func=view,
-                                  methods=['GET'])
-
             return model
         return dec
