@@ -7,6 +7,7 @@
 """
 
 import re
+import logging
 
 from flask import request, Response, jsonify, views, abort
 import sqlalchemy.exc
@@ -18,6 +19,8 @@ content_types = {
     'text/html': None,
     'text/csv': None
 }
+
+logger = logging.getLogger(__name__)
 
 
 class View(views.MethodView):
@@ -72,7 +75,7 @@ class View(views.MethodView):
         self.db.session.add(item)
         try:
             self.db.session.commit()
-        except sqlalchemy.exc.IntegrityError, ecx:
+        except sqlalchemy.exc.IntegrityError as ecx:
             abort(409, ecx.orig)
 
         return jsonify(id=item.id), 201
@@ -94,18 +97,50 @@ class View(views.MethodView):
                 setattr(item, k, v)
         try:
             self.db.session.commit()
-        except sqlalchemy.exc.IntegrityError, ecx:
+        except sqlalchemy.exc.IntegrityError as ecx:
             abort(409, ecx.orig)
         return Response(status=204)
 
 
 class Rest:
-    def __init__(self, app, db):
+    def __init__(self, app=None, db=None):
         self.app = app
         self.db = db
+        self.models = {}
+
+    def init_app(self, app):
+        self.app = app
+        self.add_rules()
+
+    def __add_rule(self, model, methods, results_per_page, query_func):
+        path = '/' + model.__tablename__ + '/'
+        logger.debug("Add rule '%s' for methods: %s", ', '.join(methods))
+
+        view = View.as_view('api_' + model.__tablename__, self.app,
+                                self.db, model, results_per_page, query_func)
+        self.app.add_url_rule(path, defaults={'id': None},
+                              view_func=view, methods=['GET', ])
+        self.app.add_url_rule(path, view_func=view, methods=['POST', ])
+        self.app.add_url_rule(path + '<int:id>', view_func=view,
+                              methods=['GET', 'PUT', 'DELETE'])
+
+        # self.app.add_url_rule(path + '<slug>', view_func=view,
+        #                       methods=['GET'])
+
+    def add_rules(self):
+        for model, rule in self.models.items():
+            self.__add_rule(model, **rule)
+        pass
 
     def api(self, methods=None, results_per_page=10, query_func=None):
         def dec(model):
+            self.models[model] = {
+                'methods': methods,
+                'results_per_page': results_per_page,
+                'query_func': query_func
+            }
+            return model
+
             view = View.as_view('api_' + model.__tablename__, self.app,
                                 self.db, model, results_per_page, query_func)
             path = '/' + model.__tablename__ + '/'
