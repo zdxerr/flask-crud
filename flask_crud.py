@@ -5,20 +5,26 @@
     :copyright: (c) 2012 by Christoph Schniedermeier.
     :license: BSD, see LICENSE for more details.
 """
-
-import re
-
-from flask import request, Response, jsonify, views, abort
+import werkzeug
+from flask import request, Response, jsonify, views, abort, make_response
 import sqlalchemy.exc
 
 from utilities import link_headers
 
-content_types = {
-    'application/json': jsonify,
-    'text/html': None,
-    'text/csv': None
-}
+from functools import wraps
 
+def check_auth(username, password):
+    return (username == 'admin' and password == 'secretx')
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            abort(401)
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 class View(views.MethodView):
@@ -33,7 +39,7 @@ class View(views.MethodView):
         query = self.model.query
 
         if id:
-            return jsonify(query.get_or_404(id))
+            return jsonify({self.model.__tablename__: query.get_or_404(id)})
         else:
             q = request.values.get('q')
             if q:
@@ -112,24 +118,33 @@ class Rest:
 
     def __add_rule(self, model, methods, results_per_page, query_func):
         path = '/' + model.__tablename__ + '/'
-        self.app.logger.debug("Add rule '%s' for methods: %s", path, ', '.join(methods))
+        self.app.logger.debug("Add rule '%s' for methods: %s", path, 
+                              ', '.join(methods))
 
         view = View.as_view('api_' + model.__tablename__, self.app,
                             self.db, model, results_per_page, query_func)
+        view.decorators = [requires_auth]
         self.app.add_url_rule(path, defaults={'id': None},
                               view_func=view, methods=['GET', ])
         self.app.add_url_rule(path, view_func=view, methods=['POST', ])
         self.app.add_url_rule(path + '<int:id>', view_func=view,
                               methods=['GET', 'PUT', 'DELETE'])
 
-
     def add_rules(self):
+        """
+        Add all previously defined model routes to the application.
+        """
         for model, rule in self.models.items():
             self.__add_rule(model, **rule)
-        pass
 
     def api(self, methods=None, results_per_page=10, query_func=None):
+        """
+        Define new model.
+        """
         def dec(model):
+            """
+            Decorator function memoizes model and its parameters.
+            """
             self.models[model] = {
                 'methods': methods,
                 'results_per_page': results_per_page,
