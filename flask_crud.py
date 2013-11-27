@@ -6,10 +6,10 @@
     :license: BSD, see LICENSE for more details.
 """
 import werkzeug
-from flask import request, Response, jsonify, views, abort, make_response
+from flask import request, Response, jsonify, views, abort
 import sqlalchemy.exc
 
-from utilities import link_headers
+from utilities import link_headers, strings_to_dates
 
 from functools import wraps
 
@@ -29,6 +29,8 @@ def requires_auth(f):
 
 class View(views.MethodView):
     def __init__(self, app, db, model, per_page, query_func):
+        """
+        """
         self.app = app
         self.db = db
         self.model = model
@@ -41,36 +43,31 @@ class View(views.MethodView):
         if id:
             return jsonify({self.model.__tablename__: query.get_or_404(id)})
         else:
-            q = request.values.get('q')
-            if q:
-                query = query.filter_by(name=q)
+            search_query = request.values.get('q')
+            if search_query:
+                query = query.filter_by(name=search_query)
 
             if self.query_func:
                 query = self.query_func(query)
 
-            p = query.paginate(
+            pagination = query.paginate(
                 request.values.get('page', 1, type=int),
                 request.values.get('per_page', self.per_page, type=int),
                 error_out=False
             )
 
-            name = self.model.__tablename__ + 's'
-            data = {name: p.items}
-            return (jsonify(data), 200, link_headers(p))
+            name = self.model.__tablename__
+            data = {name: pagination.items}
+            return (jsonify(data), 200, link_headers(pagination))
 
     def post(self):
         data = request.values.to_dict()
         if request.json:
             data = request.json
 
-        if False:
-            column_values = dict((k, v) for k, v in request.values.items(True)
-                                 if k in self.model.__table__.columns.keys())
-            item = self.model.query.filter_by(**column_values).first()
-            if not item:
-                item = self.model(**data)
-                self.db.session.add(item)
-                self.db.session.commit()
+        # parse strings for date and datetime columns
+        data = strings_to_dates(self.model, data)
+
         try:
             item = self.model(**data)
         except TypeError:
