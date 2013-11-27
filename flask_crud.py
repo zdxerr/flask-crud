@@ -70,7 +70,7 @@ class View(views.MethodView):
 
         try:
             item = self.model(**data)
-        except TypeError:
+        except TypeError as error:
             abort(400)
 
         self.db.session.add(item)
